@@ -1,0 +1,56 @@
+Instructions to start the network.
+
+1. Down the test-network repo on home folder.
+2. Down the test-sdkrepo on home folder.
+3. Both repo should kept in home and folder will created parallel to each other.
+
+To start the network
+cd test-network
+
+<!-- Below mentioned command will create the network and will deploy the customer erc20 contract with HTLC. -->
+<!-- If docker images are not available on you laptop it will automatically deploy the latest images. -->
+sh startClean.sh   
+
+<!-- check all the containers are up and running.   -->
+Now follow the Instructions mentioned in file "how-to-call-chaincode-functionfromCLI"
+These instruction will allow you to run all the chaincode functions from command prompt.
+
+
+
+To start the sdk
+cd test-sdk
+npm i
+npm run start
+
+
+Now open postman and exeute the POST method
+
+http://localhost:4000/sdk/api/v2/registerEnrollUser
+
+Body (Type should JSON)
+{
+	"userId": "kama1@settlemint.app",
+    "OrgId": "1",
+    "orgName": "org1"
+}
+
+It will successfully register the identity.
+
+
+You can also try creating Token definition from postman using POST method
+
+http://localhost:4000/sdk/api/v2/token
+
+Body
+{
+  "userId": "kama1@settlemint.app",
+  "ownerOrgId": "1",
+  "data": {
+    "tokenId": "101",
+    "tokenName": "HACKATHON-T",
+    "tokenOrg": "1",
+    "tokenAvailable": 100,
+    "tokenIssued": 0,
+    "tokenType": "HASHLOCK TOKENS"
+  }
+}
