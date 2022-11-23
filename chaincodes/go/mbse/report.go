@@ -18,8 +18,10 @@ type Details struct {
 
 type Summary struct {
 	SummaryId string `json:"summaryId"`
+	Version   string `json:"version"`
 	AssetType string `json:"assetType"`
 	ModelId   string `json:"modelId"`
+	ProjectId string `json:"projectId"`
 	ModelName string `json:"modelName"`
 	ModelType string `json:"modelType"`
 	Reviewer  string `json:"reviewer"`
@@ -45,7 +47,7 @@ func (contract *SmartContract) CreateDetailedMBSEModelPrivate(ctx contractapi.Tr
 		return fmt.Errorf("Org role not defined properly. %s", er1.Error())
 	}
 
-	if orgRole != "DEVELOPER" && (userRole != "CSE") {
+	if orgRole != "DEVELOPER" && userRole != "CSE" {
 		return fmt.Errorf("Insufficient Roles! DEVELOPER & CSE roles are required.")
 	}
 
@@ -58,9 +60,12 @@ func (contract *SmartContract) CreateDetailedMBSEModelPrivate(ctx contractapi.Tr
 		return fmt.Errorf("Failed to parse MBSE argument. %s", err1.Error())
 	}
 
-	// if detail.AssetType == "Summary"{
-	// some validation
-	// }
+	detailAsBytes, err := ctx.GetStub().GetPrivateData("_implicit_org_Org1MSP", detail.ModelId)
+	if err != nil {
+		return fmt.Errorf("Failed to get detail report:" + err.Error())
+	} else if detailAsBytes != nil {
+		return fmt.Errorf("Detail MBSE alread exist: " + detail.ModelId)
+	}
 
 	err = stub.PutPrivateData("_implicit_org_Org1MSP", detail.ModelId, []byte(MBSEData))
 	if err != nil {
@@ -72,21 +77,21 @@ func (contract *SmartContract) CreateDetailedMBSEModelPrivate(ctx contractapi.Tr
 
 func (contract *SmartContract) UpdateDetailedMBSEModelPrivate(ctx contractapi.TransactionContextInterface, MBSEData string) (err error) {
 
-	fmt.Printf("CreateDetailedMBSEModelPrivate start-->")
+	fmt.Printf("UpdateDetailedMBSEModelPrivate new start-->")
 
-	// userRole, err := contract.GetUserRoles(ctx)
-	// if err != nil {
-	// 	return fmt.Errorf("User role not defined properly. %s", err.Error())
-	// }
+	userRole, err := contract.GetUserRoles(ctx)
+	if err != nil {
+		return fmt.Errorf("User role not defined properly. %s", err.Error())
+	}
 
-	// orgRole, er1 := contract.GetOrgRoles(ctx)
-	// if er1 != nil {
-	// 	return fmt.Errorf("Org role not defined properly. %s", er1.Error())
-	// }
+	orgRole, er1 := contract.GetOrgRoles(ctx)
+	if er1 != nil {
+		return fmt.Errorf("Org role not defined properly. %s", er1.Error())
+	}
 
-	// if orgRole != "DEVELOPER" && userRole != "CSE" {
-	// 	return fmt.Errorf("Insufficient Roles! DEVELOPER & CSE roles are required.")
-	// }GetUserRoles
+	if orgRole != "DEVELOPER" && userRole != "CSE" {
+		return fmt.Errorf("Insufficient Roles! DEVELOPER & CSE roles are required.")
+	}
 
 	stub := ctx.GetStub()
 
@@ -97,7 +102,25 @@ func (contract *SmartContract) UpdateDetailedMBSEModelPrivate(ctx contractapi.Tr
 		return fmt.Errorf("Failed to parse MBSE argument. %s", err1.Error())
 	}
 
-	err = stub.PutPrivateData("_implicit_org_Org1MSP", detail.ModelId, []byte(MBSEData))
+	detailAsBytes, err := ctx.GetStub().GetPrivateData("_implicit_org_Org1MSP", detail.ModelId)
+	if err != nil {
+		return fmt.Errorf("Failed to get detail report:" + err.Error())
+	} else if detailAsBytes == nil {
+		return fmt.Errorf("Detail MBSE does not exist: " + detail.ModelId)
+	}
+
+	detailToUpdate := Details{}
+	err = json.Unmarshal(detailAsBytes, &detailToUpdate) //unmarshal it aka JSON.parse()
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal Summary JSON: %s", err.Error())
+	}
+
+	detailToUpdate.ModelName = detail.ModelName //change the owner
+	detailToUpdate.ProjectId = detail.ProjectId //change the owner
+
+	detailJSONasBytes, _ := json.Marshal(detailToUpdate)
+
+	err = stub.PutPrivateData("_implicit_org_Org1MSP", detail.ModelId, detailJSONasBytes)
 	if err != nil {
 		return fmt.Errorf("Failed to insert MBGetStateSE in ledger. %s", err.Error())
 	}
@@ -159,6 +182,20 @@ func (contract *SmartContract) GetOrgRoles(ctx contractapi.TransactionContextInt
 }
 
 //Function to get extract the userId from ca identity.  It is required to for checking the minter
+func (contract *SmartContract) GetOrgName(ctx contractapi.TransactionContextInterface) (string, error) {
+
+	fmt.Println("GetOrgName start-->")
+
+	orgName, found, _ := ctx.GetClientIdentity().GetAttributeValue("organizationName")
+	if found == false {
+		fmt.Println("orgName not found!")
+		return "", fmt.Errorf("orgName not found!")
+	}
+
+	return orgName, nil
+}
+
+//Function to get extract the userId from ca identity.  It is required to for checking the minter
 func (contract *SmartContract) GetUserRoles(ctx contractapi.TransactionContextInterface) (string, error) {
 
 	fmt.Printf("GetUserRoles start-->")
@@ -171,19 +208,34 @@ func (contract *SmartContract) GetUserRoles(ctx contractapi.TransactionContextIn
 	return userRole, nil
 }
 
+//new
+//Function to get extract the userId from ca identity.  It is required to for checking the minter
+func (contract *SmartContract) GetMyMSPID(ctx contractapi.TransactionContextInterface) (string, error) {
+
+	fmt.Printf("GetMyMSPID start-->")
+
+	uMSPId, ufound := ctx.GetClientIdentity().GetMSPID()
+	if ufound == nil {
+		return "", fmt.Errorf("MSP ID not found!")
+	}
+
+	fmt.Println("uMSPId:", uMSPId)
+	return uMSPId, nil
+}
+
 func (contract *SmartContract) CreateSummaryMBSEModel(ctx contractapi.TransactionContextInterface, MBSEData string) (err error) {
 
 	fmt.Printf("CreateDetailedMBSEModel start-->")
 
 	stub := ctx.GetStub()
-	var detail Details
+	var summary Summary
 
-	err1 := json.Unmarshal([]byte(MBSEData), &detail)
+	err1 := json.Unmarshal([]byte(MBSEData), &summary)
 	if err1 != nil {
 		return fmt.Errorf("Failed to parse MBSE argument. %s", err1.Error())
 	}
 
-	err = stub.PutState(detail.ModelId, []byte(MBSEData))
+	err = stub.PutState(summary.SummaryId, []byte(MBSEData))
 	if err != nil {
 		return fmt.Errorf("Failed to insert MBSE in ledger. %s", err.Error())
 	}
@@ -192,10 +244,56 @@ func (contract *SmartContract) CreateSummaryMBSEModel(ctx contractapi.Transactio
 	return nil
 }
 
+//new
+func (contract *SmartContract) UpdateSummaryMBSEModel(ctx contractapi.TransactionContextInterface, MBSEData string) (err error) {
+
+	fmt.Printf("UpdateSummaryMBSEModel start-->")
+
+	stub := ctx.GetStub()
+	var summary Summary
+
+	err1 := json.Unmarshal([]byte(MBSEData), &summary)
+	if err1 != nil {
+		return fmt.Errorf("Failed to parse MBSE argument. %s", err1.Error())
+	}
+
+	summaryAsBytes, err := ctx.GetStub().GetState(summary.SummaryId)
+
+	if err != nil {
+		return fmt.Errorf("Failed to read from world state. %s", err.Error())
+	}
+
+	if summaryAsBytes == nil {
+		return fmt.Errorf("Summary %s does not exist", summary.SummaryId)
+	}
+
+	summaryData := new(Summary)
+	_ = json.Unmarshal(summaryAsBytes, summaryData)
+
+	summaryData.ProjectId = summary.ProjectId
+	summaryData.Reviewer = summary.Reviewer
+	summaryData.Approver = summary.Approver
+	summaryData.Comments = summary.Comments
+
+	summaryDAsBytes, _ := json.Marshal(summaryData)
+
+	err = stub.PutState(summary.SummaryId, summaryDAsBytes)
+	if err != nil {
+		return fmt.Errorf("Failed to update MBSE summary in ledger. %s", err.Error())
+	}
+	fmt.Println("MBSE model updated successfully")
+
+	return nil
+}
+
+//new
 func (contract *SmartContract) GetDetailedMBSEModelPrivate(ctx contractapi.TransactionContextInterface, mbse_id string) (*Details, error) {
 
-	fmt.Printf("DeleteDetailedMBSEModelPrivate start-->", mbse_id)
+	fmt.Printf("GetDetailedMBSEModelPrivate start-->", mbse_id)
 
+	myMSPID, _ := contract.GetOrgName(ctx)
+
+	fmt.Println("GetDetailedMBSEModelPrivate myMSPID-->", myMSPID)
 	// userRole, err := contract.GetUserRoles(ctx)
 	// if err != nil {
 	// 	return fmt.Errorf("User role not defined properly. %s", err.Error())
@@ -212,7 +310,7 @@ func (contract *SmartContract) GetDetailedMBSEModelPrivate(ctx contractapi.Trans
 
 	// stub := ctx.GetStub()
 
-	mbseBytes, err1 := ctx.GetStub().GetPrivateData("_implicit_org_Org1MSP", "Summary_"+mbse_id)
+	mbseBytes, err1 := ctx.GetStub().GetPrivateData("_implicit_org_Org1MSP", mbse_id)
 	if err1 != nil {
 		return nil, fmt.Errorf("Failed to get the MBSE. %s", err1.Error())
 	}
@@ -281,6 +379,59 @@ func (contract *SmartContract) ShareReport(ctx contractapi.TransactionContextInt
 	return nil
 
 }
+
+// func (contract *SmartContract) UpdateDetailedMBSEModelPrivate(ctx contractapi.TransactionContextInterface, MBSEData string) (err error) {
+
+// 	fmt.Printf("UpdateDetailedMBSEModelPrivate new start-->")
+
+// 	userRole, err := contract.GetUserRoles(ctx)
+// 	if err != nil {
+// 		return fmt.Errorf("User role not defined properly. %s", err.Error())
+// 	}
+
+// 	orgRole, er1 := contract.GetOrgRoles(ctx)
+// 	if er1 != nil {
+// 		return fmt.Errorf("Org role not defined properly. %s", er1.Error())
+// 	}
+
+// 	if orgRole != "DEVELOPER" && userRole != "CSE" {
+// 		return fmt.Errorf("Insufficient Roles! DEVELOPER & CSE roles are required.")
+// 	}
+
+// 	stub := ctx.GetStub()
+
+// 	var summary Summary
+
+// 	err1 := json.Unmarshal([]byte(MBSEData), &summary)
+// 	if err1 != nil {
+// 		return fmt.Errorf("Failed to parse MBSE argument. %s", err1.Error())
+// 	}
+
+// 	summaryAsBytes, err := ctx.GetStub().GetPrivateData("_implicit_org_Org1MSP", summary.ModelId)
+// 	if err != nil {
+// 		return fmt.Errorf("Failed to get Summary report:" + err.Error())
+// 	} else if summaryAsBytes == nil {
+// 		return fmt.Errorf("Marble does not exist: " + summary.ModelId)
+// 	}
+
+// 	summaryToUpdate := Summary{}
+// 	err = json.Unmarshal(summaryAsBytes, &summaryToUpdate) //unmarshal it aka JSON.parse()
+// 	if err != nil {
+// 		return fmt.Errorf("failed to unmarshal Summary JSON: %s", err.Error())
+// 	}
+
+// 	summaryToUpdate.ModelName = summary.ModelName //change the owner
+// 	summaryToUpdate.ProjectId = summary.ProjectId //change the owner
+
+// 	summaryJSONasBytes, _ := json.Marshal(summaryToUpdate)
+
+// 	err = stub.PutPrivateData("_implicit_org_Org1MSP", summary.ModelId, summaryJSONasBytes)
+// 	if err != nil {
+// 		return fmt.Errorf("Failed to insert MBGetStateSE in ledger. %s", err.Error())
+// 	}
+// 	fmt.Println("MBSE prviate model created successfully")
+// 	return nil
+// }
 
 // func (contract *SmartContract) CreateSummaryMBSEModel(ctx contractapi.TransactionContextInterface, MBSEData string) (err error) {
 
